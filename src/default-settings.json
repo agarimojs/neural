@@ -1,0 +1,10 @@
+{
+  "iterations": 20000,
+  "errorThresh": 0.00005,
+  "deltaErrorThresh": 0.000001,
+  "learningRate": 0.6,
+  "momentum": 0.5,
+  "alpha": 0.07,
+  "log": false,
+  "multi": false
+}
