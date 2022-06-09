@@ -36,7 +36,7 @@ describe('Neural', () => {
     test('It should train during several epochs', () => {
       const net = new Neural();
       const status = net.train(corpus);
-      expect(status.iterations).toEqual(34);
+      expect(status.iterations).toEqual(29);
     });
   });
 
@@ -46,7 +46,7 @@ describe('Neural', () => {
       net.train(corpus);
       const { good, total } = net.measure();
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
   });
 
@@ -55,7 +55,7 @@ describe('Neural', () => {
       const net = train(corpus);
       const { good, total } = measure(net);
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
   });
 
@@ -65,7 +65,7 @@ describe('Neural', () => {
       net.train(corpus);
       const { good, total } = net.measureCorpus(corpus);
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
   });
 
@@ -97,15 +97,15 @@ describe('Neural', () => {
       const expected = [
         {
           intent: 'smalltalk.boss',
-          score: 0.7464177512679069,
+          score: 0.7372071118768818,
         },
         {
           intent: 'smalltalk.birthday',
-          score: 0.2535210691874059,
+          score: 0.26274855823114524,
         },
         {
           intent: 'smalltalk.right',
-          score: 0.00006117954468731187,
+          score: 0.000044329891972963164,
         },
       ];
       expect(actual).toEqual(expected);
@@ -119,15 +119,15 @@ describe('Neural', () => {
         monoIntent: [
           {
             intent: 'smalltalk.boss',
-            score: 0.7464177512679069,
+            score: 0.7372071118768818,
           },
           {
             intent: 'smalltalk.birthday',
-            score: 0.2535210691874059,
+            score: 0.26274855823114524,
           },
           {
             intent: 'smalltalk.right',
-            score: 0.00006117954468731187,
+            score: 0.000044329891972963164,
           },
         ],
         multiIntent: [
@@ -137,19 +137,19 @@ describe('Neural', () => {
             classifications: [
               {
                 intent: 'smalltalk.acquaintance',
-                score: 0.9994305864564091,
+                score: 0.9986955806472481,
               },
               {
                 intent: 'smalltalk.annoying',
-                score: 0.00029939905400927795,
+                score: 0.0007621672107829141,
               },
               {
                 intent: 'smalltalk.bad',
-                score: 0.0002644902763842131,
+                score: 0.0005183030838014321,
               },
               {
                 intent: 'smalltalk.hungry',
-                score: 0.000005524213197446476,
+                score: 0.000023949058167544597,
               },
             ],
           },
@@ -159,11 +159,11 @@ describe('Neural', () => {
             classifications: [
               {
                 intent: 'smalltalk.birthday',
-                score: 0.9874897374972665,
+                score: 0.9891193351298617,
               },
               {
                 intent: 'trivia.gc',
-                score: 0.01251026250273345,
+                score: 0.010880664870138371,
               },
             ],
           },
@@ -173,11 +173,11 @@ describe('Neural', () => {
             classifications: [
               {
                 intent: 'smalltalk.boss',
-                score: 0.9999821681183945,
+                score: 0.9999703942458513,
               },
               {
                 intent: 'support.developers',
-                score: 0.000017831881605606757,
+                score: 0.000029605754148707918,
               },
             ],
           },
@@ -196,10 +196,10 @@ describe('Neural', () => {
       net2.fromJSON(json);
       const { good, total } = net2.measure(corpus);
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
     test('It can be saved/loaded including perceptron changes', () => {
-      const net = new Neural();
+      const net = new Neural({ keepWeightsAndChanges: true });
       net.train(corpus);
       const json = net.toJSON({ saveChanges: true });
       const net2 = new Neural();
@@ -207,7 +207,7 @@ describe('Neural', () => {
       net2.fromJSON(json);
       const { good, total } = net2.measure(corpus);
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
     test('It can be chosen to do not save the encoder', () => {
       const net = new Neural();
@@ -218,7 +218,7 @@ describe('Neural', () => {
       net2.fromJSON(json);
       const { good, total } = net2.measure(corpus);
       expect(total).toEqual(256);
-      expect(good).toEqual(202);
+      expect(good).toEqual(203);
     });
   });
 });

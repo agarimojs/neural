@@ -1,5 +1,4 @@
 const Neural = require('./neural');
-const NeuralBig = require('./neural-big');
 
 function train(corpus, settings) {
   const net = new Neural(settings);
@@ -17,7 +16,6 @@ function measure(net, corpus) {
 
 module.exports = {
   Neural,
-  NeuralBig,
   train,
   run,
   measure,

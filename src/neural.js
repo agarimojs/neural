@@ -1,6 +1,7 @@
 const { Encoder } = require('@agarimo/encoder');
 const { LRUCache } = require('@agarimo/lru-cache');
 const { runMulti } = require('./neural-multi');
+
 const defaultSettings = require('./default-settings.json');
 
 const defaultLogFn = (status, time) =>
@@ -36,69 +37,129 @@ class Neural {
   }
 
   initialize() {
+    this.useBias =
+      this.settings.useBias === undefined ? true : this.settings.useBias;
     this.useCache =
       this.settings.useCache === undefined ? true : this.settings.useCache;
-    this.cacheSize = this.settings.cacheSize || 1000;
+    this.cacheSize = this.settings.cacheSize || 10000;
     if (this.useCache) {
-      this.cache = new LRUCache(1000);
+      this.cache = new LRUCache(this.cacheSize);
     }
-    const labels = this.encoder.intents;
-    const numFeatures = this.encoder.features.length;
     this.perceptrons = [];
     this.perceptronByName = {};
-    this.numPerceptrons = labels.length;
+    this.numPerceptrons = this.encoder.intents.length;
     for (let i = 0; i < this.numPerceptrons; i += 1) {
-      const name = labels[i];
       const perceptron = {
-        name,
+        name: this.encoder.intents[i],
         id: i,
-        weights: new Float32Array(numFeatures),
-        changes: new Float32Array(numFeatures),
+        weights: new Float32Array(this.encoder.features.length),
+        changes: new Float32Array(this.encoder.features.length),
         bias: 0,
       };
       this.perceptrons.push(perceptron);
-      this.perceptronByName[name] = perceptron;
+      this.perceptronByName[perceptron.name] = perceptron;
     }
   }
 
   runInputPerceptronTrain(perceptron, input) {
-    const sum = input.keys.reduce(
-      (prev, key) => prev + input.data[key] * perceptron.weights[key],
-      perceptron.bias
-    );
+    const { weights, bias } = perceptron;
+    let sum = bias;
+    for (let i = 0; i < input.keys.length; i += 1) {
+      sum += weights[input.keys[i]];
+    }
     return sum <= 0 ? 0 : this.settings.alpha * sum;
   }
 
-  runInputPerceptron(perceptron, input) {
-    const sum = input.keys.reduce(
-      (prev, key) => prev + input.data[key] * perceptron.weights[key],
-      perceptron.bias
-    );
-    return sum <= perceptron.bias ? 0 : this.settings.alpha * sum;
+  trainPerceptron(perceptron, data) {
+    const { alpha, momentum } = this.settings;
+    const { weights, changes } = perceptron;
+    const dlr = this.decayLearningRate;
+    let error = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      const { input, output } = data[i];
+      const actualOutput = this.runInputPerceptronTrain(perceptron, input);
+      const expectedOutput = output.data[perceptron.id] || 0;
+      const currentError = expectedOutput - actualOutput;
+      if (currentError) {
+        error += currentError ** 2;
+        let delta = currentError * dlr;
+        if (actualOutput < 0) {
+          delta *= alpha;
+        }
+        for (let j = 0; j < input.keys.length; j += 1) {
+          const key = input.keys[j];
+          const change = delta + momentum * changes[key];
+          changes[key] = change;
+          weights[key] += change;
+        }
+        if (this.useBias) {
+          // eslint-disable-next-line no-param-reassign
+          perceptron.bias += delta;
+        }
+      }
+    }
+    return error;
+  }
+
+  weightsToDict() {
+    this.weightsDict = {};
+    const numFeatures = this.encoder.features.length;
+    for (let i = 0; i < numFeatures; i += 1) {
+      this.weightsDict[i] = { data: {}, keys: [] };
+      for (let j = 0; j < this.numPerceptrons; j += 1) {
+        const perceptron = this.perceptrons[j];
+        if (perceptron.weights[i] !== 0) {
+          this.weightsDict[i].data[j] = perceptron.weights[i];
+          this.weightsDict[i].keys.push(j);
+        }
+      }
+    }
+  }
+
+  removeWeightsAndChanges() {
+    for (let i = 0; i < this.numPerceptrons; i += 1) {
+      const perceptron = this.perceptrons[i];
+      if (!this.settings.multi) {
+        delete perceptron.weights;
+      }
+      delete perceptron.changes;
+    }
   }
 
   runInput(input, validIntents) {
-    const outputs = [];
+    const outputs = this.perceptrons.map(({ name, bias }) => ({
+      intent: name,
+      score: bias,
+    }));
+    for (let i = 0, li = input.keys.length; i < li; i += 1) {
+      const weights = this.weightsDict[input.keys[i]];
+      if (weights) {
+        for (let j = 0, lj = weights.keys.length; j < lj; j += 1) {
+          const key = weights.keys[j];
+          outputs[key].score += weights.data[key];
+        }
+      }
+    }
+    const result = [];
     let total = 0;
-    const perceptrons = validIntents
-      ? validIntents.map((intent) => this.perceptronByName[intent])
-      : this.perceptrons;
-    for (let i = 0; i < perceptrons.length; i += 1) {
-      const perceptron = perceptrons[i];
-      const score = this.runInputPerceptron(perceptron, input);
-      if (score > 0) {
-        const item = { intent: perceptron.name, score: score ** 2 };
-        outputs.push(item);
-        total += item.score;
+    for (let i = 0; i < outputs.length; i += 1) {
+      const output = outputs[i];
+      if (
+        output.score > Math.max(this.perceptronByName[output.intent].bias, 0) &&
+        (!validIntents || validIntents.includes(output.intent))
+      ) {
+        output.score **= 2;
+        total += output.score;
+        result.push(output);
       }
     }
-    if (total > 0) {
-      for (let i = 0; i < outputs.length; i += 1) {
-        outputs[i].score /= total;
-      }
-      return outputs.sort((a, b) => b.score - a.score);
+    if (total === 0) {
+      return [{ intent: 'None', score: 1 }];
     }
-    return [{ intent: 'None', score: 1 }];
+    for (let i = 0; i < result.length; i += 1) {
+      result[i].score /= total;
+    }
+    return result.sort((a, b) => b.score - a.score);
   }
 
   run(text, validIntents) {
@@ -120,32 +181,6 @@ class Neural {
       monoIntent: result,
       multiIntent: runMulti(this, text, result[0].score, validIntents),
     };
-  }
-
-  trainPerceptron(perceptron, data) {
-    const { alpha, momentum } = this.settings;
-    const { weights, changes } = perceptron;
-    const dlr = this.decayLearningRate;
-    let error = 0;
-    for (let i = 0; i < data.length; i += 1) {
-      const { input, output } = data[i];
-      const actualOutput = this.runInputPerceptronTrain(perceptron, input);
-      const expectedOutput = output.data[perceptron.id] || 0;
-      const currentError = expectedOutput - actualOutput;
-      if (currentError) {
-        error += currentError ** 2;
-        const delta = (actualOutput > 0 ? 1 : alpha) * currentError * dlr;
-        for (let j = 0; j < input.keys.length; j += 1) {
-          const key = input.keys[j];
-          const change = delta * input.data[key] + momentum * changes[key];
-          changes[key] = change;
-          weights[key] += change;
-        }
-        // eslint-disable-next-line no-param-reassign
-        perceptron.bias += delta;
-      }
-    }
-    return error;
   }
 
   train(corpus) {
@@ -185,6 +220,10 @@ class Neural {
         const hrend = new Date();
         this.logFn(this.status, hrend.getTime() - hrstart.getTime());
       }
+    }
+    this.weightsToDict();
+    if (!this.settings.keepWeightsAndChanges) {
+      this.removeWeightsAndChanges();
     }
     return this.status;
   }
@@ -233,6 +272,12 @@ class Neural {
     const result = {
       settings: { ...this.settings },
     };
+    const weights = [];
+    const keys = Object.keys(this.weightsDict);
+    for (let i = 0; i < keys.length; i += 1) {
+      weights.push(this.weightsDict[keys[i]].data);
+    }
+    result.weightsDict = weights;
     delete result.settings.processor;
     if (this.perceptrons) {
       result.perceptrons = [];
@@ -241,7 +286,7 @@ class Neural {
         const current = {
           name: perceptron.name,
           id: perceptron.id,
-          weights: [...perceptron.weights],
+          weights: perceptron.weights ? [...perceptron.weights] : undefined,
           bias: perceptron.bias,
         };
         if (options.saveChanges) {
@@ -258,6 +303,13 @@ class Neural {
 
   fromJSON(json) {
     this.settings = { ...this.settings, ...json.settings };
+    this.weightsDict = {};
+    for (let i = 0; i < json.weightsDict.length; i += 1) {
+      this.weightsDict[i] = {
+        data: json.weightsDict[i],
+        keys: Object.keys(json.weightsDict[i]),
+      };
+    }
     if (json.encoder) {
       this.encoder = new Encoder({
         processor: this.settings.processor,
@@ -273,8 +325,10 @@ class Neural {
         const perceptron = json.perceptrons[i];
         const current = this.perceptronByName[perceptron.name];
         current.bias = perceptron.bias;
-        for (let j = 0; j < perceptron.weights.length; j += 1) {
-          current.weights[j] = perceptron.weights[j];
+        if (perceptron.weights) {
+          for (let j = 0; j < perceptron.weights.length; j += 1) {
+            current.weights[j] = perceptron.weights[j];
+          }
         }
         if (perceptron.changes) {
           for (let j = 0; j < perceptron.changes.length; j += 1) {
