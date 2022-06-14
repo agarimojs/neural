@@ -1,6 +1,6 @@
 {
   "name": "@agarimo/neural",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Neural Network for the NLU",
   "main": "src/index.js",
   "scripts": {

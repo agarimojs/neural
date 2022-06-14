@@ -1,7 +1,6 @@
 const { Encoder } = require('@agarimo/encoder');
 const { LRUCache } = require('@agarimo/lru-cache');
 const { runMulti } = require('./neural-multi');
-
 const defaultSettings = require('./default-settings.json');
 
 const defaultLogFn = (status, time) =>
@@ -9,17 +8,9 @@ const defaultLogFn = (status, time) =>
 
 class Neural {
   constructor(settings = {}) {
-    this.settings = { ...settings };
-    Object.keys(defaultSettings).forEach((key) => {
-      if (this.settings[key] === undefined) {
-        this.settings[key] = defaultSettings[key];
-      }
-    });
-    if (this.settings.log === true) {
-      this.logFn = defaultLogFn;
-    } else if (typeof this.settings.log === 'function') {
-      this.logFn = this.settings.log;
-    }
+    this.settings = { ...defaultSettings, ...settings };
+    this.logFn = this.settings.log === true ? defaultLogFn : this.settings.log;
+    this.noneIntent = settings.noneIntent || 'None';
   }
 
   prepareCorpus(corpus) {
@@ -37,8 +28,6 @@ class Neural {
   }
 
   initialize() {
-    this.useBias =
-      this.settings.useBias === undefined ? true : this.settings.useBias;
     this.useCache =
       this.settings.useCache === undefined ? true : this.settings.useCache;
     this.cacheSize = this.settings.cacheSize || 10000;
@@ -62,8 +51,8 @@ class Neural {
   }
 
   runInputPerceptronTrain(perceptron, input) {
-    const { weights, bias } = perceptron;
-    let sum = bias;
+    const { weights } = perceptron;
+    let sum = perceptron.bias;
     for (let i = 0; i < input.keys.length; i += 1) {
       sum += weights[input.keys[i]];
     }
@@ -92,10 +81,8 @@ class Neural {
           changes[key] = change;
           weights[key] += change;
         }
-        if (this.useBias) {
-          // eslint-disable-next-line no-param-reassign
-          perceptron.bias += delta;
-        }
+        // eslint-disable-next-line no-param-reassign
+        perceptron.bias += delta;
       }
     }
     return error;
@@ -154,7 +141,7 @@ class Neural {
       }
     }
     if (total === 0) {
-      return [{ intent: 'None', score: 1 }];
+      return [{ intent: this.noneIntent, score: 1 }];
     }
     for (let i = 0; i < result.length; i += 1) {
       result[i].score /= total;
@@ -266,6 +253,18 @@ class Neural {
       }
     }
     return { good, total };
+  }
+
+  shrink(decimals = 5) {
+    const keys = Object.keys(this.weightsDict);
+    for (let i = 0; i < keys.length; i += 1) {
+      const weights = this.weightsDict[keys[i]];
+      for (let j = 0; j < weights.keys.length; j += 1) {
+        const index = weights.keys[j];
+        const weight = weights.data[index];
+        weights.data[index] = parseFloat(weight.toFixed(decimals));
+      }
+    }
   }
 
   toJSON(options = {}) {
